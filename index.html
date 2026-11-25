@@ -117,7 +117,7 @@ document.getElementById('loginForm').addEventListener('submit',async e=>{
  
 let lastEvents=[];
 const reportDate=document.getElementById('reportDate');
-if(reportDate) reportDate.value=localToday();
+if(reportDate){const p=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Kinshasa',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const v=t=>p.find(x=>x.type===t)?.value||'';reportDate.value=v('year')+'-'+v('month')+'-'+v('day');}
 async function loadEvents(){
  const box=document.getElementById('eventRows'), statusBox=document.getElementById('eventStatus');
  if(!box||!reportDate.value)return;
