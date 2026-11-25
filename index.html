@@ -33,7 +33,7 @@
 <section class="panel" id="personnelPanel"><div class="panel-head"><div><h2>Annuaire du personnel</h2><p>Recherche et consultation des agents du périmètre pilote</p></div><span class="badge">622 agents de référence</span></div><div class="panel-body"><div class="toolbar"><input class="field search" id="staffSearch" placeholder="Rechercher par nom ou matricule…"><button class="btn light" onclick="document.getElementById('staffSearch').value='';renderStaff()">Effacer</button></div><div class="notice">Le registre nominatif sera affiché après raccordement sécurisé à la vue officielle Supabase. Aucun nom n'est inventé dans cette interface.</div><div class="empty">Connexion au registre officiel en cours de préparation.</div></div></section>
 <section class="panel" id="directionsPanel"><div class="panel-head"><div><h2>Directions et services</h2><p>Structure référencée dans le périmètre Administration Centrale · Kinshasa / Gombe</p></div><span class="badge">15 libellés référencés</span></div><div class="panel-body"><div class="toolbar"><select class="field search" id="directoryDirection"><option value="">Choisir une direction pour afficher ses agents</option></select></div><div id="directionDetail" class="notice">Connectez-vous comme administrateur, puis choisissez une direction pour afficher les agents affectés.</div><div class="directions" id="directionList"></div></div></section>
 <section class="panel" id="ajoutsPanel"><div class="panel-head"><div><h2>Ajouts manuels et validations</h2><p>Soumission des agents omis et suivi de leur validation</p></div></div><div class="panel-body"><div class="notice"><b>Mode de démonstration :</b> les demandes restent locales à cette page. Elles ne sont pas enregistrées dans la base officielle tant que l'API sécurisée n'est pas raccordée.</div><form id="addForm"><div class="form-grid"><label>Nom complet *<input class="field" name="nom" required minlength="3"></label><label>Matricule<input class="field" name="matricule"></label><label>Catégorie<select class="field" name="categorie"><option>Inspecteur du travail</option><option>Contrôleur du travail</option><option>Agent administratif</option></select></label><label>Grade<input class="field" name="grade"></label><label>Direction *<select class="field" name="direction" id="directionSelect" required></select></label><label>Lieu d'affectation<input class="field" name="lieu" value="Kinshasa / Gombe" required></label></div><p style="text-align:right;margin:15px 0 0"><button class="btn" type="submit">Soumettre la demande</button></p></form></div><div class="table-wrap"><table><thead><tr><th>Nom complet</th><th>Matricule</th><th>Direction</th><th>Statut</th><th>Action</th></tr></thead><tbody id="requestRows"><tr><td colspan="5" class="empty">Aucune demande dans cette session.</td></tr></tbody></table></div></section>
-<section class="panel" id="reportsPanel"><div class="panel-head"><div><h2>Rapports et statistiques</h2><p>États journaliers et synthèses</p></div></div><div class="panel-body"><div class="notice">Les rapports réels seront activés après connexion aux événements de présence validés dans la base de données.</div><button class="btn light" onclick="window.print()">Imprimer la feuille de présence</button></div></section>
+<section class="panel" id="reportsPanel"><div class="panel-head"><div><h2>Rapports et statistiques</h2><p>Événements réellement enregistrés dans la base de données</p></div><button class="btn light" id="refreshEvents" type="button">Actualiser</button></div><div class="panel-body"><div class="toolbar"><label class="date">Date du rapport <input class="field" id="reportDate" type="date"></label><button class="btn" id="loadEvents" type="button">Afficher les pointages</button><button class="btn light" id="exportEvents" type="button">Exporter CSV</button></div><div class="presence-summary"><span class="presence-chip">Événements : <b id="eventTotal">0</b></span><span class="presence-chip">Arrivées : <b id="eventArrivals">0</b></span><span class="presence-chip">Départs : <b id="eventDepartures">0</b></span><span class="presence-chip">Vérifiés physiquement : <b id="eventVerified">0</b></span></div><div id="eventStatus" class="notice">Connectez-vous avec le compte super administrateur pour charger les événements du serveur.</div><div class="table-wrap"><table><thead><tr><th>Date / heure</th><th>Identifiant agent</th><th>Type</th><th>Vérification</th><th>Méthode</th><th>Terminal</th></tr></thead><tbody id="eventRows"><tr><td colspan="6" class="empty">Aucun rapport chargé.</td></tr></tbody></table></div><p class="date">Ce rapport affiche les événements serveur. Les feuilles locales et signatures manuscrites restent distinctes et ne sont pas fusionnées automatiquement avec les pointages certifiés.</p></div></section>
 <section class="panel" id="pointagePanel"><div class="panel-head"><div><h2>Pointage individuel des agents</h2><p>Scanner le QR temporaire et vérifier la présence sur site</p></div></div><div class="panel-body"><iframe title="Pointage individuel des agents" src="pointage.html" allow="camera; geolocation" loading="lazy" style="display:block;width:100%;height:820px;border:0;border-radius:12px;background:#f4f7fb"></iframe></div></section>
 
 <section class="panel" id="devicesPanel"><div class="panel-head"><div><h2>Terminaux de pointage</h2><p>Enrôlement d’un téléphone Android dédié à l’entrée</p></div></div><div class="panel-body">
@@ -114,7 +114,35 @@ document.getElementById('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();const fd=new FormData(e.currentTarget);status.textContent='Connexion…';
  const {error}=await supabase.auth.signInWithPassword({email:fd.get('email'),password:fd.get('password')});
  if(error){status.textContent='Échec de connexion : '+error.message;return}
- await showAuth();
+ 
+let lastEvents=[];
+const reportDate=document.getElementById('reportDate');
+if(reportDate) reportDate.value=localToday();
+async function loadEvents(){
+ const box=document.getElementById('eventRows'), statusBox=document.getElementById('eventStatus');
+ if(!box||!reportDate.value)return;
+ statusBox.textContent='Chargement des événements du serveur…';
+ try{
+  const d=await adminCall({action:'events',day:reportDate.value});
+  lastEvents=d.events||[];
+  const count=(type)=>lastEvents.filter(x=>x.event_type===type).length;
+  document.getElementById('eventTotal').textContent=lastEvents.length;
+  document.getElementById('eventArrivals').textContent=count('arrival');
+  document.getElementById('eventDepartures').textContent=count('departure');
+  document.getElementById('eventVerified').textContent=lastEvents.filter(x=>x.verification_status==='verified_physical').length;
+  box.innerHTML=lastEvents.length?lastEvents.map(x=>'<tr><td>'+safe(new Date(x.event_at).toLocaleString('fr-FR',{timeZone:'Africa/Kinshasa'}))+'</td><td>'+safe(x.agent_id??x.manual_person_id??'—')+'</td><td>'+safe(x.event_type==='arrival'?'Arrivée':x.event_type==='departure'?'Départ':x.event_type)+'</td><td>'+safe(x.verification_status||'—')+'</td><td>'+safe(x.verification_method||'—')+'</td><td>'+safe(x.device_id||'—')+'</td></tr>').join(''):'<tr><td colspan="6" class="empty">Aucun événement enregistré pour cette date.</td></tr>';
+  statusBox.textContent='Rapport serveur chargé pour le '+reportDate.value+'. '+lastEvents.length+' événement(s).';
+ }catch(e){statusBox.textContent='Impossible de charger le rapport : '+e.message;box.innerHTML='<tr><td colspan="6" class="empty">Accès refusé ou service indisponible.</td></tr>'}
+}
+document.getElementById('loadEvents')?.addEventListener('click',loadEvents);
+document.getElementById('refreshEvents')?.addEventListener('click',loadEvents);
+document.getElementById('exportEvents')?.addEventListener('click',()=>{
+ const rows=[['Date/heure','Agent ID','Type','Statut','Méthode','Terminal ID'],...lastEvents.map(x=>[x.event_at,x.agent_id??x.manual_person_id,x.event_type,x.verification_status,x.verification_method,x.device_id])];
+ const csv='\\ufeff'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\\r\\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='rapport-pointage-'+(reportDate.value||'jour')+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+});
+
+await showAuth();
 });
 document.getElementById('deviceRegisterForm')?.addEventListener('submit',async e=>{
  e.preventDefault();const fd=new FormData(e.currentTarget);
