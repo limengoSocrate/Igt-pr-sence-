@@ -23,21 +23,21 @@ $('loginBtn').addEventListener('click',async()=>{
 $('logout').addEventListener('click',async()=>{if(scanner){try{await scanner.stop()}catch{}}await supabase.auth.signOut();await updateSession()});
 function getPosition(){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Géolocalisation non disponible sur ce navigateur.'));navigator.geolocation.getCurrentPosition(p=>resolve(p.coords),e=>reject(new Error('Position GPS impossible : '+e.message)),{enableHighAccuracy:true,timeout:15000,maximumAge:0})})}
 async function onScan(token){
- if(processing)return;processing=true;$('status').textContent='Vérification du QR et de votre position GPS…';
+ if(processing)return;processing=true;let completed=false;$('status').textContent='Vérification du QR et de votre position GPS…';
  try{
   const coords=await getPosition();const {data:{session}}=await supabase.auth.getSession();if(!session)throw new Error('Votre session a expiré.');
   const {data,error}=await supabase.functions.invoke('igt-presence-admin',{body:{action:'record_physical',event_type:$('eventType').value,qr_token:token,latitude:coords.latitude,longitude:coords.longitude,accuracy_m:coords.accuracy},headers:{Authorization:'Bearer '+session.access_token}});
   if(error)throw error;if(!data?.success)throw new Error(data?.message||'Pointage refusé.');
   $('status').textContent='Pointage enregistré avec succès : '+(data.event.event_type==='arrival'?'ARRIVÉE':'DÉPART')+' — '+new Date(data.event.event_at).toLocaleString('fr-FR',{timeZone:'Africa/Kinshasa'});
-  if(scanner){await scanner.stop();$('startScan').textContent='Scanner un autre QR';}
+  completed=true;if(scanner){await scanner.stop();$('startScan').textContent='Scanner un autre QR';}
  }catch(e){$('status').textContent=e.message+' — Si le QR a expiré, scannez le nouveau code affiché au terminal.'}
- finally{processing=false}
+ finally{processing=false;if(!completed&&scanner){try{scanner.resume()}catch{}}}
 }
 $('startScan').addEventListener('click',async()=>{
  try{
   if(!scanner)scanner=new Html5Qrcode('reader');
   $('status').textContent='Ouverture de la caméra…';
-  await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:250,height:250}},decoded=>{scanner.pause(true);onScan(decoded).finally(()=>{if(scanner)scanner.resume()})},()=>{});
+  await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:250,height:250}},decoded=>{scanner.pause(true);onScan(decoded)},()=>{});
   $('startScan').textContent='Caméra active — présentez le QR';
  }catch(e){$('status').textContent='Caméra indisponible : '+e.message}
 });
